@@ -1,0 +1,24 @@
+.DS_Store
+__pycache__/
+*.pyc
+venv/
+.venv/
+.env
+*.env
+keys.env
+requirements.env
+secrets.toml
+.streamlit/secrets.toml
+*.jsonl
+outputs/
+data/
+data/logs/
+data_test/logs/
+.pytest_cache/
+# regenerable backtest cache + root output (committed copies live in results/, which is NOT ignored)
+/backtest_data/
+/backtest_results.csv
+.Rhistory
+*.xmind
+.Rhistory
+*.xmind

@@ -1,0 +1,18 @@
+# Unified requirements — one flat package: live/paper framework + backtester + Streamlit UI.
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+# UI
+streamlit>=1.32.0
+streamlit-autorefresh>=1.0.1
+plotly>=5.18.0
+# market data / execution
+requests>=2.31.0
+websocket-client>=1.8.0
+python-binance>=1.0.17
+python-dotenv>=1.0.0
+# status dashboard (yumi framework)
+fastapi>=0.115.0
+uvicorn>=0.30.0
+# dev/test:  python -m pip install pytest

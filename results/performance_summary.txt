@@ -1,0 +1,37 @@
+================================================================
+  HISTORICAL BACKTEST — Regime-Gated PCA Flow (full strategy)
+  Window: 2026-05-19 -> 2026-06-18  (43,200 1-min bars)
+  Config: all gates ON (regime + IC stability), cost 1.0 bp/turn
+================================================================
+  Metrics are reproduced from the committed per-bar run in this folder
+  (results/backtest_results.csv). To re-run the live strategy end-to-end:
+      python backtest.py --start 2026-05-19 --days 30
+----------------------------------------------------------------
+  PERFORMANCE
+  Total return         :    -0.50 %
+  Annualized return    :    -5.91 %
+  Annualized vol       :     0.97 %
+  Sharpe (ann, daily)  :    -5.03
+  Max drawdown         :    -0.53 %
+  Win rate (in-market) :    43.0 %
+  Time in market       :     1.0 %
+  Rebalances           :   122   (avg turnover 0.351, total turnover ~42.8)
+  Total trading cost   :     0.43 %
+  Regime mix           :   RiskOff 90.0% | Moderate 10.0% | Strong 0.0%
+----------------------------------------------------------------
+  BENCHMARK
+  Equal-weight buy-hold (9 alts)  :   -18.76 %
+  Strategy excess vs benchmark    :   +18.26 %
+  (Market-neutral + regime gate kept the book ~flat through a -19% alt
+   drawdown -- downside avoidance, not captured alpha; see Project Report.pdf.)
+----------------------------------------------------------------
+  SIGNAL DIAGNOSTIC -- Information Coefficient (residual flow vs fwd return)
+   horizon        IC    t-stat    hit%   periods
+        1m   -0.0288   -16.62    45.9    43,020
+        2m   -0.0267   -15.52    46.1    43,019
+        5m   -0.0242   -14.18    46.4    43,016
+       10m   -0.0184   -10.82    47.0    43,011
+       30m   -0.0141    -8.25    47.7    42,991
+  Verdict: real signal (peak |IC|=0.029, reversal, consistent decay), but
+  uneconomical to take liquidity with (break-even ~0.05 bp << fees).
+================================================================
