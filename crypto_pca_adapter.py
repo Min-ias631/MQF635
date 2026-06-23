@@ -13,7 +13,7 @@ import pandas as pd
 
 
 def _canonical_modules():
-    from combined import CombinedRegimePcaStrategy
+    from combined import CombinedRegimePcaStrategy, compute_regime_info
     from engine_config import (
         AlphaConfig,
         BacktestDataConfig,
@@ -29,6 +29,7 @@ def _canonical_modules():
 
     return {
         "CombinedRegimePcaStrategy": CombinedRegimePcaStrategy,
+        "compute_regime_info": compute_regime_info,
         "AlphaConfig": AlphaConfig,
         "BacktestDataConfig": BacktestDataConfig,
         "CostConfig": CostConfig,
@@ -116,7 +117,7 @@ def compute_crypto_pca_dashboard(
 
     assert target is not None
     signals = strategy.latest_signals
-    regime_info = _regime_display(config, btc_daily)
+    regime_info = modules["compute_regime_info"](config.regime, btc_daily)
     regime_info["regime"] = "Forced" if force_trade else target.regime
     regime_info["multiplier"] = 1.0 if force_trade else target.regime_multiplier
 
@@ -242,32 +243,3 @@ def _pc1_explained_variance(config, klines_all) -> float:
     _, s, _ = np.linalg.svd(matrix, full_matrices=False)
     variances = s**2
     return float(variances[0] / variances.sum()) if variances.sum() > 0 else 0.0
-
-
-def _regime_display(config, btc_daily: pd.DataFrame) -> dict[str, Any]:
-    if btc_daily is None or btc_daily.empty or len(btc_daily) < config.regime.momentum_long_days + 2:
-        return {"regime": "Unknown", "multiplier": 0.0, "r5": None, "r20": None, "vol20": None, "vol_threshold": None}
-
-    closes = btc_daily["close"].astype(float)
-    short = config.regime.momentum_short_days
-    long = config.regime.momentum_long_days
-    vol_window = config.regime.volatility_window_days
-    threshold_days = config.regime.volatility_threshold_days
-    completed = closes.iloc[:-1] if len(closes) > threshold_days else closes
-    if len(completed) < threshold_days:
-        return {"regime": "Unknown", "multiplier": 0.0, "r5": None, "r20": None, "vol20": None, "vol_threshold": None}
-
-    returns = completed.pct_change()
-    short_mom = completed.iloc[-1] / completed.iloc[-short - 1] - 1.0
-    long_mom = completed.iloc[-1] / completed.iloc[-long - 1] - 1.0
-    vol = returns.iloc[-vol_window:].std() * np.sqrt(365)
-    historical = returns.rolling(vol_window).std().mul(np.sqrt(365)).dropna().iloc[-threshold_days - 1 : -1]
-    threshold = float(np.percentile(historical, config.regime.volatility_percentile)) if not historical.empty else None
-    return {
-        "regime": "Unknown",
-        "multiplier": 0.0,
-        "r5": round(short_mom * 100, 2),
-        "r20": round(long_mom * 100, 2),
-        "vol20": round(float(vol) * 100, 2),
-        "vol_threshold": round(threshold * 100, 2) if threshold is not None else None,
-    }

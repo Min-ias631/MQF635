@@ -178,6 +178,63 @@ class RebalanceCadenceTests(unittest.TestCase):
         self.assertTrue(all(w == 0.0 for w in target.weights.values()))
 
 
+class PortfolioConstructionTests(unittest.TestCase):
+    @staticmethod
+    def _portfolio_config():
+        return _canonical_extras()["PortfolioConfig"](
+            base_gross_exposure=1.0,
+            single_asset_cap=0.30,
+        )
+
+    def test_cap_and_renormalize_respects_single_asset_cap(self) -> None:
+        m = _canonical_extras()
+        portfolio = m["CombinedRegimePcaStrategy"].__dict__["portfolio"] if False else None
+        from combined import Portfolio as CombinedPortfolio
+
+        out = CombinedPortfolio._cap_and_renormalize(
+            {"AAAUSDT": 0.40, "BBBUSDT": 0.10, "CCCUSDT": -0.25, "DDDUSDT": -0.25},
+            cap=0.30,
+            gross=1.0,
+        )
+
+        self.assertTrue(out)
+        self.assertLessEqual(max(abs(v) for v in out.values()), 0.30 + 1e-12)
+        self.assertAlmostEqual(sum(v for v in out.values() if v > 0), 0.5, places=12)
+        self.assertAlmostEqual(sum(-v for v in out.values() if v < 0), 0.5, places=12)
+        self.assertAlmostEqual(sum(out.values()), 0.0, places=12)
+
+    def test_construct_flattens_if_only_one_leg_survives_confirmation(self) -> None:
+        m = _canonical_extras()
+        from combined import Portfolio as CombinedPortfolio, SignalSnapshot
+
+        class DummyConfig:
+            base_gross_exposure = 1.0
+            single_asset_cap = 0.30
+            min_eligible = 1
+            no_trade_band = 0.0
+            vol_window = 5
+
+        portfolio = CombinedPortfolio(DummyConfig())
+        signals = {
+            "AAAUSDT": SignalSnapshot("AAAUSDT", 2.0, 0.0, 0.0, 0.0, True, True),
+            "BBBUSDT": SignalSnapshot("BBBUSDT", 1.0, 0.0, 0.0, 0.0, False, True),
+            "CCCUSDT": SignalSnapshot("CCCUSDT", -2.0, 0.0, 0.0, 0.0, False, True),
+            "DDDUSDT": SignalSnapshot("DDDUSDT", -1.0, 0.0, 0.0, 0.0, False, True),
+        }
+
+        target = portfolio.construct(
+            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            signals=signals,
+            regime="Strong",
+            regime_multiplier=1.0,
+            long_quantile=0.5,
+            short_quantile=0.5,
+        )
+
+        self.assertTrue(all(w == 0.0 for w in target.weights.values()))
+        self.assertAlmostEqual(sum(target.weights.values()), 0.0)
+
+
 class FundingSettlementTests(unittest.TestCase):
     def test_long_pays_positive_funding(self) -> None:
         pf = Portfolio()

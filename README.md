@@ -20,7 +20,7 @@ the live framework, the backtester, and the UI).
   `crypto_pca.py`, `microstructure_strategy.py`, `strategy_base.py`.
 - **UI + backtester:** `app.py` (Streamlit), `backtest.py` (historical backtest + IC
   diagnostic), `data_client.py`, `crypto_pca_adapter.py`, `features.py`, `signal_engine.py`,
-  `ui_portfolio.py`, `risk_manager.py`, `execution_manager.py`.
+  `ui_risk_manager.py`, `execution_manager.py`.
 - **Docs:** `Project Report.pdf`.	
 
 ### Install
@@ -56,7 +56,7 @@ python -m pytest tests/ -q          # expect: 69 passed
 
 ## Strategy summary
 
-A regime-gated, market-neutral, cross-sectional **PCA residual-flow** strategy on Binance USD-M
+A regime-gated, cross-sectional **PCA residual-flow** strategy on Binance USD-M
 perpetual futures (BTC + 9 liquid altcoin perps; BTC is used for the regime gate and the PCA
 common-factor, the traded universe excludes BTC). Three layers:
 
@@ -65,7 +65,7 @@ common-factor, the traded universe excludes BTC). Three layers:
 2. **PCA residual-flow alpha** (1-minute) — rolling PCA on the cross-section of taker-flow
    imbalance, OLS-residualized against PC1/PC2, cross-sectionally z-scored, blended 0.8/0.2 with a
    funding-crowdedness signal; trade direction set from out-of-sample IC.
-3. **Microstructure confirmation + Q80/Q20 vol-scaled, market-neutral long-short portfolio.**
+3. **Microstructure confirmation + Q80/Q20 vol-scaled long-short portfolio.**
 
 **Canonical specification:** `Project Report.pdf`.
 
@@ -81,6 +81,17 @@ common-factor, the traded universe excludes BTC). Three layers:
 | Rebalance | every 5 minutes (alpha updates every minute) |
 | Live execution | signed REST orders (tick/step rounding, GTX post-only) + user-data fill stream + cancel/replace |
 
+The implemented portfolio constructor now enforces a stricter neutrality rule:
+if either the long leg or the short leg is empty after microstructure confirmation,
+the strategy stands down and returns an all-zero target rather than deploying a
+one-sided book. When both legs exist, weights are allocated by capped iterative
+redistribution so that the final portfolio respects the single-asset cap.
+
+Repository note: the project intentionally contains two risk layers with different
+roles. `risk.py` is the event-driven pre-trade gate inside the execution framework,
+while `ui_risk_manager.py` is the lighter Streamlit-side dashboard/execution safety
+controller. They are not interchangeable.
+
 ### Not implemented (design ideas in the spec only — NOT in the code)
 
 To keep the report honest: the **probe-order liquidity test** and the **queue-aware "realistic fill"
@@ -93,3 +104,11 @@ See the Limitations section of the report.
 
 See **Project Report.pdf** for the empirical results (performance metrics, benchmark, IC
 diagnostic, ablations, and limitations). Reproduce with `python backtest.py --start 2026-05-19 --days 30`.
+
+The per-bar backtest CSV written by the current code contains both:
+- `gross_return`: pre-cost forward portfolio return
+- `net_return`: post-cost return used to build the exported `equity` curve
+
+If you are reading an older committed CSV with only `net_return`, treat that
+column as a legacy naming issue from a pre-fix export rather than the current
+code-path definition.

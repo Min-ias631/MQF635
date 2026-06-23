@@ -46,6 +46,105 @@ class Target:
     weights: Dict[str, float]
 
 
+def compute_regime_info(regime_config, btc_daily) -> Dict[str, Any]:
+    """Compute both the regime decision and the display fields from one source."""
+    if not getattr(regime_config, "enabled", True):
+        return {
+            "regime": "AllOn",
+            "multiplier": 1.0,
+            "r5": None,
+            "r20": None,
+            "vol20": None,
+            "vol_threshold": None,
+        }
+    if btc_daily is None:
+        return {
+            "regime": "Unknown",
+            "multiplier": 0.0,
+            "r5": None,
+            "r20": None,
+            "vol20": None,
+            "vol_threshold": None,
+        }
+    try:
+        if getattr(btc_daily, "empty", False):
+            return {
+                "regime": "Unknown",
+                "multiplier": 0.0,
+                "r5": None,
+                "r20": None,
+                "vol20": None,
+                "vol_threshold": None,
+            }
+        closes = np.asarray(btc_daily["close"], dtype=float)
+    except Exception:
+        return {
+            "regime": "Unknown",
+            "multiplier": 0.0,
+            "r5": None,
+            "r20": None,
+            "vol20": None,
+            "vol_threshold": None,
+        }
+
+    short = regime_config.momentum_short_days
+    long = regime_config.momentum_long_days
+    vol_window = regime_config.volatility_window_days
+    lookback = regime_config.volatility_threshold_days
+
+    if len(closes) < lookback + long + 2:
+        return {
+            "regime": "Unknown",
+            "multiplier": 0.0,
+            "r5": None,
+            "r20": None,
+            "vol20": None,
+            "vol_threshold": None,
+        }
+
+    completed = closes[:-1]
+    if len(completed) < lookback:
+        return {
+            "regime": "Unknown",
+            "multiplier": 0.0,
+            "r5": None,
+            "r20": None,
+            "vol20": None,
+            "vol_threshold": None,
+        }
+
+    r_short = completed[-1] / completed[-(short + 1)] - 1.0
+    r_long = completed[-1] / completed[-(long + 1)] - 1.0
+
+    daily_rets = np.diff(np.log(completed))
+    vol_now = float(np.std(daily_rets[-vol_window:], ddof=1) * np.sqrt(365))
+    past_vols = [
+        float(np.std(daily_rets[i:i + vol_window], ddof=1) * np.sqrt(365))
+        for i in range(len(daily_rets) - lookback, len(daily_rets) - vol_window)
+        if i >= 0
+    ]
+    vol_threshold = (
+        float(np.percentile(past_vols, regime_config.volatility_percentile))
+        if past_vols else 999.0
+    )
+
+    if r_long > 0 and r_short > 0 and vol_now < vol_threshold:
+        regime, multiplier = "Strong", 1.0
+    elif r_long > 0 and r_short <= 0 and vol_now < vol_threshold:
+        regime, multiplier = "Moderate", 0.5
+    else:
+        regime, multiplier = "RiskOff", 0.0
+
+    return {
+        "regime": regime,
+        "multiplier": multiplier,
+        "r5": round(r_short * 100, 2),
+        "r20": round(r_long * 100, 2),
+        "vol20": round(float(vol_now) * 100, 2),
+        "vol_threshold": round(vol_threshold * 100, 2),
+    }
+
+
 class Portfolio:
     """Long-short construction: Q80/Q20, vol-scaled, regime-gated, capped.
 
@@ -116,6 +215,12 @@ class Portfolio:
         short_syms = [s for s, a in zip(syms, alphas)
                       if a < q_short and micro_confirm.get(s, False)]
 
+        # Keep the portfolio market-neutral: if only one side survives
+        # confirmation, stand down rather than deploy a one-sided book.
+        if not long_syms or not short_syms:
+            self._prev_weights = dict(weights)
+            return Target(timestamp, regime, regime_multiplier, weights)
+
         long_w = self._vol_scale_leg(eligible, long_syms, +1, gross) if long_syms else {}
         short_w = self._vol_scale_leg(eligible, short_syms, -1, gross) if short_syms else {}
 
@@ -157,13 +262,44 @@ class Portfolio:
         short_w = {s: w for s, w in weights.items() if w < 0}
 
         def _cap_leg(leg):
-            capped = {s: min(abs(w), cap) * np.sign(w) for s, w in leg.items()}
-            total_abs = sum(abs(v) for v in capped.values())
             target = 0.5 * gross
-            if total_abs > 1e-10:
-                scale = target / total_abs
-                capped = {s: v * scale for s, v in capped.items()}
-            return capped
+            if not leg or target <= 1e-12:
+                return {}
+
+            abs_leg = {s: abs(w) for s, w in leg.items()}
+            capped = {s: 0.0 for s in abs_leg}
+            active = dict(abs_leg)
+            remaining = target
+            tol = 1e-12
+
+            while active and remaining > tol:
+                total_active = sum(active.values())
+                if total_active <= tol:
+                    break
+
+                scale = remaining / total_active
+                newly_capped = []
+                allocated_this_round = 0.0
+
+                for sym, raw in active.items():
+                    trial = raw * scale
+                    if trial >= cap - tol:
+                        capped[sym] = cap
+                        allocated_this_round += cap
+                        newly_capped.append(sym)
+
+                if not newly_capped:
+                    for sym, raw in active.items():
+                        capped[sym] = raw * scale
+                    remaining = 0.0
+                    break
+
+                remaining -= allocated_this_round
+                for sym in newly_capped:
+                    active.pop(sym, None)
+
+            sign = 1.0 if next(iter(leg.values())) > 0 else -1.0
+            return {s: sign * v for s, v in capped.items() if v > tol}
 
         return {**_cap_leg(long_w), **_cap_leg(short_w)}
 
@@ -256,53 +392,8 @@ class CombinedRegimePcaStrategy:
         return float(delta)
 
     def _regime(self, btc_daily) -> Tuple[str, float]:
-        """BTC daily regime gate (features.compute_btc_regime), config-parameterized.
-
-        btc_daily is a pandas DataFrame with a 'close' column in the UI, or None.
-        """
-        rc = self.config.regime
-        if not getattr(rc, "enabled", True):
-            return "AllOn", 1.0          # regime gate ablated -> always deploy
-        if btc_daily is None:
-            return "Unknown", 0.0
-        try:
-            if getattr(btc_daily, "empty", False):
-                return "Unknown", 0.0
-            closes = np.asarray(btc_daily["close"], dtype=float)
-        except Exception:
-            return "Unknown", 0.0
-
-        short = rc.momentum_short_days
-        long = rc.momentum_long_days
-        vw = rc.volatility_window_days
-        lookback = rc.volatility_threshold_days
-
-        if len(closes) < lookback + long + 2:
-            return "Unknown", 0.0
-
-        c = closes[:-1]  # drop the (possibly incomplete) current candle
-        if len(c) < lookback:
-            return "Unknown", 0.0
-
-        r_short = c[-1] / c[-(short + 1)] - 1.0
-        r_long = c[-1] / c[-(long + 1)] - 1.0
-
-        daily_rets = np.diff(np.log(c))
-        vol_now = float(np.std(daily_rets[-vw:], ddof=1) * np.sqrt(365))
-        past_vols = [
-            float(np.std(daily_rets[i:i + vw], ddof=1) * np.sqrt(365))
-            for i in range(len(daily_rets) - lookback, len(daily_rets) - vw)
-            if i >= 0
-        ]
-        vol_threshold = (
-            float(np.percentile(past_vols, rc.volatility_percentile)) if past_vols else 999.0
-        )
-
-        if r_long > 0 and r_short > 0 and vol_now < vol_threshold:
-            return "Strong", 1.0
-        if r_long > 0 and r_short <= 0 and vol_now < vol_threshold:
-            return "Moderate", 0.5
-        return "RiskOff", 0.0
+        info = compute_regime_info(self.config.regime, btc_daily)
+        return str(info["regime"]), float(info["multiplier"])
 
 
-__all__ = ["CombinedRegimePcaStrategy", "Portfolio", "SignalSnapshot", "Target"]
+__all__ = ["CombinedRegimePcaStrategy", "Portfolio", "SignalSnapshot", "Target", "compute_regime_info"]

@@ -4,7 +4,10 @@
   Config: all gates ON (regime + IC stability), cost 1.0 bp/turn
 ================================================================
   Metrics are reproduced from the committed per-bar run in this folder
-  (results/backtest_results.csv). To re-run the live strategy end-to-end:
+  (results/backtest_results.csv). The current code exports both gross_return
+  (pre-cost) and net_return (post-cost, used for equity); the committed CSV
+  in this folder may still reflect the older single-column naming.
+  To re-run the live strategy end-to-end:
       python backtest.py --start 2026-05-19 --days 30
 ----------------------------------------------------------------
   PERFORMANCE
@@ -22,16 +25,20 @@
   BENCHMARK
   Equal-weight buy-hold (9 alts)  :   -18.76 %
   Strategy excess vs benchmark    :   +18.26 %
-  (Market-neutral + regime gate kept the book ~flat through a -19% alt
-   drawdown -- downside avoidance, not captured alpha; see Project Report.pdf.)
+  (+18.26% is relative outperformance versus the -18.76% benchmark, not
+   positive absolute alpha. The strategy's own total return is -0.50%;
+   the result is mainly downside avoidance, not captured alpha.)
 ----------------------------------------------------------------
   SIGNAL DIAGNOSTIC -- Information Coefficient (residual flow vs fwd return)
    horizon        IC    t-stat    hit%   periods
         1m   -0.0288   -16.62    45.9    43,020
         2m   -0.0267   -15.52    46.1    43,019
         5m   -0.0242   -14.18    46.4    43,016
-       10m   -0.0184   -10.82    47.0    43,011
-       30m   -0.0141    -8.25    47.7    42,991
+        10m   -0.0184   -10.82    47.0    43,011
+        30m   -0.0141    -8.25    47.7    42,991
+  (Bars and IC periods differ because the backtest window counts all 1-minute
+   bars, while IC periods drop horizon-tail bars and any timestamps without a
+   usable cross-sectional signal/return pair.)
   Verdict: real signal (peak |IC|=0.029, reversal, consistent decay), but
   uneconomical to take liquidity with (break-even ~0.05 bp << fees).
 ================================================================

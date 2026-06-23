@@ -506,8 +506,9 @@ def main() -> None:
         "regime": regime_df["regime"],
         "mult": regime_df["mult"],
         "gross_exposure": weights_df.abs().sum(axis=1),
-        "net_return": (weights_df * closes_df.pct_change().shift(-1)).sum(axis=1),
+        "gross_return": (weights_df * closes_df.pct_change().shift(-1)).sum(axis=1),
     })
+    out["net_return"] = m["net"].reindex(out.index)
     out["equity"] = m["equity"].reindex(out.index)
     out_path = Path(__file__).resolve().parent / args.out
     out.to_csv(out_path)

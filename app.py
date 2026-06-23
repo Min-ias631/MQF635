@@ -15,7 +15,7 @@ from collections import deque
 
 from data_client import BinanceClient, SYMBOLS, TRADE_SYMBOLS
 from features import compute_obi, compute_microprice
-from risk_manager import RiskManager
+from ui_risk_manager import RiskManager
 from execution_manager import ExecutionManager
 from crypto_pca_adapter import compute_crypto_pca_dashboard
 
