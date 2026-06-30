@@ -4,7 +4,7 @@
 
 ---
 
-## 📁 Project Guide & Quickstart
+##  Project Guide & Quickstart
 
 Everything is **one flat package** — run all commands from this directory; no `cd`
 between sub-folders. Modules import each other directly (one shared engine, used by
@@ -93,3 +93,8 @@ See the Limitations section of the report.
 
 See **Project Report.pdf** for the empirical results (performance metrics, benchmark, IC
 diagnostic, ablations, and limitations). Reproduce with `python backtest.py --start 2026-05-19 --days 30`.
+
+## Code Structure
+<img width="5640" height="2680" alt="trading_pipeline_with_binance_testnet_datasource" src="https://github.com/user-attachments/assets/067b4f6f-584d-48be-9a4d-fba033672b66" />
+
+
